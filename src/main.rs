@@ -1,10 +1,14 @@
 use bevy::prelude::*;
 
-// CHARACTER
-const CHARACTER_STARTING_POSITION: Vec3 = Vec3::new(0.0, 0.0, 1.0);
-const CHARACTER_DIAMETER: f32 = 50.;
-const CHARACTER_SPEED: f32 = 400.0;
-const CHARACTER_COLOR: Color = Color::srgb(1.0, 0.5, 0.5);
+// PLAYER
+const PLAYER_STARTING_POSITION: Vec3 = Vec3::new(0.0, 0.0, 1.0);
+const PLAYER_DIAMETER: f32 = 50.;
+const PLAYER_SPEED: f32 = 400.0;
+const PLAYER_COLOR: Color = Color::srgb(1.0, 0.5, 0.5);
+
+// RETICLE
+const RETICLE_DIAMETER: f32 = 20.;
+const RETICLE_COLOR: Color = Color::srgb(0.5, 0.5, 0.5);
 
 // WALL
 const WALL_THICKNESS: f32 = 10.0;
@@ -23,15 +27,19 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .insert_resource(ClearColor(BACKGROUND_COLOR))
         .add_systems(Startup, setup)
-        .add_systems(FixedUpdate, move_character)
+        .add_systems(FixedUpdate, move_player)
+        .add_systems(Update, move_reticle)
         .run();
 }
 
 #[derive(Component)]
-struct Character;
+struct Player;
 
 #[derive(Component, Default)]
 struct Collider;
+
+#[derive(Component)]
+struct Reticle;
 
 #[derive(Component)]
 #[require(Sprite, Transform, Collider)]
@@ -95,18 +103,39 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mut windows: Query<&mut Window>,
 ) {
+    for mut window in windows.iter_mut() {
+        window.cursor_options.visible = false;
+    }
+
     // Camera
     commands.spawn(Camera2d);
 
-    // Character
+    // Player
     commands.spawn((
         Mesh2d(meshes.add(Circle::default())),
-        MeshMaterial2d(materials.add(CHARACTER_COLOR)),
-        Transform::from_translation(CHARACTER_STARTING_POSITION)
-            .with_scale(Vec2::splat(CHARACTER_DIAMETER).extend(1.)),
-        Character,
+        MeshMaterial2d(materials.add(PLAYER_COLOR)),
+        Transform::from_translation(PLAYER_STARTING_POSITION)
+            .with_scale(Vec2::splat(PLAYER_DIAMETER).extend(1.)),
+        Player,
         Collider,
+    ));
+
+    // Reticle
+    let mut spawnpos = Vec3::new(0.0, 0.0, 101.0);
+
+    if let Ok(windows) = windows.single() {
+        if let Some(position) = windows.cursor_position() {
+            spawnpos = Vec3::new(position.x, position.y, 0.0);
+        }
+    }
+
+    commands.spawn((
+        Mesh2d(meshes.add(Circle::default())),
+        MeshMaterial2d(materials.add(RETICLE_COLOR)),
+        Transform::from_translation(spawnpos).with_scale(Vec2::splat(RETICLE_DIAMETER).extend(1.)),
+        Reticle,
     ));
 
     // Walls
@@ -116,9 +145,9 @@ fn setup(
     commands.spawn(Wall::new(WallLocation::Top));
 }
 
-fn move_character(
+fn move_player(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut character_transform: Single<&mut Transform, With<Character>>,
+    mut player_transform: Single<&mut Transform, With<Player>>,
     time: Res<Time>,
 ) {
     let mut direction = Vec2::ZERO;
@@ -144,15 +173,29 @@ fn move_character(
     let direction = direction.normalize_or_zero();
 
     let new_position = Vec2::new(
-        character_transform.translation.x + direction.x * CHARACTER_SPEED * time.delta_secs(),
-        character_transform.translation.y + direction.y * CHARACTER_SPEED * time.delta_secs(),
+        player_transform.translation.x + direction.x * PLAYER_SPEED * time.delta_secs(),
+        player_transform.translation.y + direction.y * PLAYER_SPEED * time.delta_secs(),
     );
 
-    let left_bound = LEFT_WALL + WALL_THICKNESS / 2.0 + CHARACTER_DIAMETER / 2.0;
-    let right_bound = RIGHT_WALL - WALL_THICKNESS / 2.0 - CHARACTER_DIAMETER / 2.0;
-    let top_bound = TOP_WALL - WALL_THICKNESS / 2.0 - CHARACTER_DIAMETER / 2.0;
-    let bottom_bound = BOTTOM_WALL + WALL_THICKNESS / 2.0 + CHARACTER_DIAMETER / 2.0;
+    let left_bound = LEFT_WALL + WALL_THICKNESS / 2.0 + PLAYER_DIAMETER / 2.0;
+    let right_bound = RIGHT_WALL - WALL_THICKNESS / 2.0 - PLAYER_DIAMETER / 2.0;
+    let top_bound = TOP_WALL - WALL_THICKNESS / 2.0 - PLAYER_DIAMETER / 2.0;
+    let bottom_bound = BOTTOM_WALL + WALL_THICKNESS / 2.0 + PLAYER_DIAMETER / 2.0;
 
-    character_transform.translation.x = new_position.x.clamp(left_bound, right_bound);
-    character_transform.translation.y = new_position.y.clamp(bottom_bound, top_bound);
+    player_transform.translation.x = new_position.x.clamp(left_bound, right_bound);
+    player_transform.translation.y = new_position.y.clamp(bottom_bound, top_bound);
+}
+
+fn move_reticle(
+    windows: Query<&mut Window>,
+    mut reticle_transform: Single<&mut Transform, With<Reticle>>,
+) {
+    if let Ok(window) = windows.single() {
+        if let Some(position) = window.cursor_position() {
+            let x = position.x - window.width() / 2.;
+            let y = window.height() / 2. - position.y;
+            reticle_transform.translation.x = x;
+            reticle_transform.translation.y = y;
+        }
+    }
 }
