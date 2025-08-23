@@ -4,8 +4,9 @@ mod enemy;
 mod movable;
 mod player;
 
-use enemy::EnemyPlugin;
-use player::PlayerPlugin;
+use enemy::{Enemy, EnemyPlugin};
+use movable::Movable;
+use player::{Player, PlayerPlugin};
 
 // RETICLE
 const RETICLE_DIAMETER: f32 = 20.;
@@ -30,6 +31,7 @@ fn main() {
         .add_plugins(EnemyPlugin)
         .insert_resource(ClearColor(BACKGROUND_COLOR))
         .add_systems(Startup, setup)
+        .add_systems(FixedUpdate, handle_collisions)
         .add_systems(Update, move_reticle)
         .run();
 }
@@ -146,6 +148,24 @@ fn move_reticle(
             let y = window.height() / 2. - position.y;
             reticle_transform.translation.x = x;
             reticle_transform.translation.y = y;
+        }
+    }
+}
+
+fn handle_collisions(
+    mut player_q: Query<(&Transform, &mut Movable), (With<Player>, With<Collider>, Without<Enemy>)>,
+    mut enemy_q: Query<(&Transform, &mut Movable), (With<Enemy>, With<Collider>, Without<Player>)>,
+) {
+    for (player_transform, mut _player_movable) in player_q.iter_mut() {
+        for (enemy_transform, mut _enemy_movable) in enemy_q.iter_mut() {
+            let player_pos = player_transform.translation.truncate();
+            let enemy_pos = enemy_transform.translation.truncate();
+            let player_r = 0.5 * player_transform.scale.x.min(player_transform.scale.y);
+            let enemy_r = 0.5 * enemy_transform.scale.x.min(enemy_transform.scale.y);
+
+            if player_pos.distance(enemy_pos) <= player_r + enemy_r {
+                info!("Player and Enemy collided");
+            }
         }
     }
 }
