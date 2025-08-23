@@ -1,5 +1,10 @@
 use bevy::prelude::*;
+
+mod enemy;
+mod movable;
 mod player;
+
+use enemy::EnemyPlugin;
 use player::PlayerPlugin;
 
 // RETICLE
@@ -22,6 +27,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(PlayerPlugin)
+        .add_plugins(EnemyPlugin)
         .insert_resource(ClearColor(BACKGROUND_COLOR))
         .add_systems(Startup, setup)
         .add_systems(Update, move_reticle)

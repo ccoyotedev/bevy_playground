@@ -3,6 +3,8 @@ use bevy::{
     prelude::*,
 };
 
+use crate::movable::Movable;
+
 // Player configuration
 const PLAYER_STARTING_POSITION: Vec3 = Vec3::new(0.0, 0.0, 1.0);
 const PLAYER_DIAMETER: f32 = 50.0;
@@ -10,24 +12,11 @@ const PLAYER_MAX_SPEED: f32 = 400.0;
 const PLAYER_ACCELERATION: f32 = 600.;
 // Applied when there is no input; larger values stop faster
 const PLAYER_DAMPING: f32 = 2.0;
-const PLAYER_COLOR: Color = Color::srgb(1.0, 0.5, 0.5);
+const PLAYER_COLOR: Color = Color::srgb(0.5, 0.5, 1.);
 
 // Sightline configuration
 const SIGHTLINE_LENGTH: f32 = 200.0;
 const SIGHTLINE_COLOR: Color = Color::srgb(0.5, 0.5, 0.5);
-
-#[derive(Component, Default)]
-pub struct Movable {
-    velocity: Vec2,
-}
-
-impl Movable {
-    fn new() -> Movable {
-        Movable {
-            velocity: Vec2::new(0., 0.),
-        }
-    }
-}
 
 #[derive(Component)]
 #[require(Movable)]
