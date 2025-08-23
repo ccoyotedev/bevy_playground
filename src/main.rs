@@ -1,4 +1,7 @@
-use bevy::prelude::*;
+use bevy::{
+    math::ops::{atan2, sqrt},
+    prelude::*,
+};
 
 // PLAYER
 const PLAYER_STARTING_POSITION: Vec3 = Vec3::new(0.0, 0.0, 1.0);
@@ -9,6 +12,8 @@ const PLAYER_COLOR: Color = Color::srgb(1.0, 0.5, 0.5);
 // RETICLE
 const RETICLE_DIAMETER: f32 = 20.;
 const RETICLE_COLOR: Color = Color::srgb(0.5, 0.5, 0.5);
+
+const SIGHTLINE_LENGTH: f32 = 200.;
 
 // WALL
 const WALL_THICKNESS: f32 = 10.0;
@@ -27,7 +32,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .insert_resource(ClearColor(BACKGROUND_COLOR))
         .add_systems(Startup, setup)
-        .add_systems(FixedUpdate, move_player)
+        .add_systems(FixedUpdate, (move_player, move_sightline).chain())
         .add_systems(Update, move_reticle)
         .run();
 }
@@ -40,6 +45,12 @@ struct Collider;
 
 #[derive(Component)]
 struct Reticle;
+
+#[derive(Component)]
+struct SightLine;
+
+#[derive(Component)]
+struct SightLineMesh;
 
 #[derive(Component)]
 #[require(Sprite, Transform, Collider)]
@@ -113,14 +124,16 @@ fn setup(
     commands.spawn(Camera2d);
 
     // Player
-    commands.spawn((
-        Mesh2d(meshes.add(Circle::default())),
-        MeshMaterial2d(materials.add(PLAYER_COLOR)),
-        Transform::from_translation(PLAYER_STARTING_POSITION)
-            .with_scale(Vec2::splat(PLAYER_DIAMETER).extend(1.)),
-        Player,
-        Collider,
-    ));
+    let player_entity = commands
+        .spawn((
+            Mesh2d(meshes.add(Circle::default())),
+            MeshMaterial2d(materials.add(PLAYER_COLOR)),
+            Transform::from_translation(PLAYER_STARTING_POSITION)
+                .with_scale(Vec2::splat(PLAYER_DIAMETER).extend(1.)),
+            Player,
+            Collider,
+        ))
+        .id();
 
     // Reticle
     let mut spawnpos = Vec3::new(0.0, 0.0, 101.0);
@@ -132,11 +145,39 @@ fn setup(
     }
 
     commands.spawn((
-        Mesh2d(meshes.add(Circle::default())),
+        Mesh2d(meshes.add(Annulus::new(
+            RETICLE_DIAMETER / 2. - 1.0,
+            RETICLE_DIAMETER / 2.,
+        ))),
         MeshMaterial2d(materials.add(RETICLE_COLOR)),
-        Transform::from_translation(spawnpos).with_scale(Vec2::splat(RETICLE_DIAMETER).extend(1.)),
+        Transform::from_translation(spawnpos),
         Reticle,
     ));
+
+    // Sight Line (pivot child of player; actual line is child of pivot)
+    commands.entity(player_entity).with_children(|parent| {
+        parent
+            .spawn((
+                // Pivot sits at player's center; rotate this.
+                // Apply inverse of player scale so child geometry uses world units.
+                Transform::from_translation(Vec3::new(0.0, 0.0, 2.0)).with_scale(Vec3::new(
+                    1. / PLAYER_DIAMETER,
+                    1. / PLAYER_DIAMETER,
+                    1.,
+                )),
+                SightLine,
+            ))
+            .with_children(|pivot_parent| {
+                pivot_parent.spawn((
+                    // 1px tall, 1px wide in pivot-local (world) units
+                    Mesh2d(meshes.add(Rectangle::new(1., 1.))),
+                    MeshMaterial2d(materials.add(RETICLE_COLOR)),
+                    // Child geometry: scale X to length each frame; translate to half-length
+                    Transform::from_translation(Vec3::new(0.5, 0.0, 0.0)),
+                    SightLineMesh,
+                ));
+            });
+    });
 
     // Walls
     commands.spawn(Wall::new(WallLocation::Left));
@@ -196,6 +237,38 @@ fn move_reticle(
             let y = window.height() / 2. - position.y;
             reticle_transform.translation.x = x;
             reticle_transform.translation.y = y;
+        }
+    }
+}
+
+fn move_sightline(
+    windows: Query<&Window>,
+    player_transform: Single<&GlobalTransform, With<Player>>,
+    mut pivot_q: Query<&mut Transform, (With<SightLine>, Without<SightLineMesh>)>,
+    mut mesh_q: Query<&mut Transform, (With<SightLineMesh>, Without<SightLine>)>,
+) {
+    if let Ok(window) = windows.single() {
+        if let Some(position) = window.cursor_position() {
+            let mouse_x = position.x - window.width() / 2.;
+            let mouse_y = window.height() / 2. - position.y;
+
+            let player_pos = player_transform.translation();
+            let dy = mouse_y - player_pos.y;
+            let dx = mouse_x - player_pos.x;
+            let hyp = sqrt(dy * dy + dx * dx);
+
+            let angle = atan2(dy, dx);
+
+            if let (Ok(mut pivot_transform), Ok(mut mesh_transform)) =
+                (pivot_q.single_mut(), mesh_q.single_mut())
+            {
+                // Rotate pivot to face the mouse
+                pivot_transform.rotation = Quat::from_rotation_z(angle);
+                // Scale child geometry length to the hypotenuse and place it half-way along X
+                let clamped = hyp.min(SIGHTLINE_LENGTH);
+                mesh_transform.scale.x = clamped;
+                mesh_transform.translation.x = clamped * 0.5;
+            }
         }
     }
 }
