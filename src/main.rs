@@ -101,7 +101,6 @@ fn setup(
     for mut window in windows.iter_mut() {
         window.cursor_options.visible = false;
     }
-
     // Camera
     commands.spawn(Camera2d);
 
@@ -123,8 +122,6 @@ fn setup(
         Transform::from_translation(spawnpos),
         Reticle,
     ));
-
-    // Sight Line is spawned by PlayerPlugin
 
     // Walls
     commands.spawn(Wall::new(WallLocation::Left));

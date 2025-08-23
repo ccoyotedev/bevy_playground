@@ -16,18 +16,22 @@ const PLAYER_COLOR: Color = Color::srgb(1.0, 0.5, 0.5);
 const SIGHTLINE_LENGTH: f32 = 200.0;
 const SIGHTLINE_COLOR: Color = Color::srgb(0.5, 0.5, 0.5);
 
-#[derive(Component)]
-pub struct Player {
+#[derive(Component, Default)]
+pub struct Movable {
     velocity: Vec2,
 }
 
-impl Player {
-    fn new() -> Player {
-        Player {
+impl Movable {
+    fn new() -> Movable {
+        Movable {
             velocity: Vec2::new(0., 0.),
         }
     }
 }
+
+#[derive(Component)]
+#[require(Movable)]
+pub struct Player;
 
 #[derive(Component)]
 struct SightLine;
@@ -56,7 +60,8 @@ fn spawn_player(
             MeshMaterial2d(materials.add(PLAYER_COLOR)),
             Transform::from_translation(PLAYER_STARTING_POSITION)
                 .with_scale(Vec2::splat(PLAYER_DIAMETER).extend(1.0)),
-            Player::new(),
+            Player,
+            Movable::new(),
             crate::Collider,
         ))
         .id();
@@ -89,15 +94,16 @@ fn spawn_player(
 
 fn move_player(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut player_q: Query<(&mut Transform, &mut Player)>,
+    mut player_q: Query<(&mut Transform, &mut Movable), With<Player>>,
     time: Res<Time>,
 ) {
-    let Ok((mut transform, mut player)) = player_q.single_mut() else {
+    let Ok((mut transform, mut movable)) = player_q.single_mut() else {
         return;
     };
 
     // Input acceleration from WASD
     let mut accel_input = Vec2::ZERO;
+
     if keyboard_input.pressed(KeyCode::KeyW) {
         accel_input.y += 1.0;
     }
@@ -113,32 +119,32 @@ fn move_player(
 
     // Update acceleration and velocity
     let accel_world = accel_input.normalize_or_zero() * PLAYER_ACCELERATION;
-    player.velocity += accel_world * time.delta_secs();
+    movable.velocity += accel_world * time.delta_secs();
 
     // Per-axis damping: if there's no input on an axis, damp that axis
     let factor = (1.0 - PLAYER_DAMPING * time.delta_secs()).max(0.0);
     if accel_input.x == 0.0 {
-        player.velocity.x *= factor;
-        if player.velocity.x.abs() < 1.0 {
-            player.velocity.x = 0.0;
+        movable.velocity.x *= factor;
+        if movable.velocity.x.abs() < 1.0 {
+            movable.velocity.x = 0.0;
         }
     }
     if accel_input.y == 0.0 {
-        player.velocity.y *= factor;
-        if player.velocity.y.abs() < 1.0 {
-            player.velocity.y = 0.0;
+        movable.velocity.y *= factor;
+        if movable.velocity.y.abs() < 1.0 {
+            movable.velocity.y = 0.0;
         }
     }
 
     // Clamp max speed
-    let speed = player.velocity.length();
+    let speed = movable.velocity.length();
     if speed > PLAYER_MAX_SPEED {
-        player.velocity = player.velocity / speed * PLAYER_MAX_SPEED;
+        movable.velocity = movable.velocity / speed * PLAYER_MAX_SPEED;
     }
 
     // Integrate position
-    transform.translation.x += player.velocity.x * time.delta_secs();
-    transform.translation.y += player.velocity.y * time.delta_secs();
+    transform.translation.x += movable.velocity.x * time.delta_secs();
+    transform.translation.y += movable.velocity.y * time.delta_secs();
 }
 
 fn move_sightline(
