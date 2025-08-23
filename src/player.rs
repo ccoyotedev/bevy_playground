@@ -6,7 +6,10 @@ use bevy::{
 // Player configuration
 const PLAYER_STARTING_POSITION: Vec3 = Vec3::new(0.0, 0.0, 1.0);
 const PLAYER_DIAMETER: f32 = 50.0;
-const PLAYER_SPEED: f32 = 400.0;
+const PLAYER_MAX_SPEED: f32 = 400.0;
+const PLAYER_ACCELERATION: f32 = 600.;
+// Applied when there is no input; larger values stop faster
+const PLAYER_DAMPING: f32 = 2.0;
 const PLAYER_COLOR: Color = Color::srgb(1.0, 0.5, 0.5);
 
 // Sightline configuration
@@ -14,7 +17,17 @@ const SIGHTLINE_LENGTH: f32 = 200.0;
 const SIGHTLINE_COLOR: Color = Color::srgb(0.5, 0.5, 0.5);
 
 #[derive(Component)]
-pub struct Player;
+pub struct Player {
+    velocity: Vec2,
+}
+
+impl Player {
+    fn new() -> Player {
+        Player {
+            velocity: Vec2::new(0., 0.),
+        }
+    }
+}
 
 #[derive(Component)]
 struct SightLine;
@@ -43,7 +56,7 @@ fn spawn_player(
             MeshMaterial2d(materials.add(PLAYER_COLOR)),
             Transform::from_translation(PLAYER_STARTING_POSITION)
                 .with_scale(Vec2::splat(PLAYER_DIAMETER).extend(1.0)),
-            Player,
+            Player::new(),
             crate::Collider,
         ))
         .id();
@@ -76,33 +89,56 @@ fn spawn_player(
 
 fn move_player(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut player_transform: Single<&mut Transform, With<Player>>,
+    mut player_q: Query<(&mut Transform, &mut Player)>,
     time: Res<Time>,
 ) {
-    let mut direction = Vec2::ZERO;
+    let Ok((mut transform, mut player)) = player_q.single_mut() else {
+        return;
+    };
 
-    let is_up = keyboard_input.pressed(KeyCode::KeyW);
-    let is_down = keyboard_input.pressed(KeyCode::KeyS);
-    let is_left = keyboard_input.pressed(KeyCode::KeyA);
-    let is_right = keyboard_input.pressed(KeyCode::KeyD);
-
-    if is_up {
-        direction.y += 1.0;
+    // Input acceleration from WASD
+    let mut accel_input = Vec2::ZERO;
+    if keyboard_input.pressed(KeyCode::KeyW) {
+        accel_input.y += 1.0;
     }
-    if is_down {
-        direction.y -= 1.0;
+    if keyboard_input.pressed(KeyCode::KeyS) {
+        accel_input.y -= 1.0;
     }
-    if is_left {
-        direction.x -= 1.0;
+    if keyboard_input.pressed(KeyCode::KeyA) {
+        accel_input.x -= 1.0;
     }
-    if is_right {
-        direction.x += 1.0;
+    if keyboard_input.pressed(KeyCode::KeyD) {
+        accel_input.x += 1.0;
     }
 
-    let direction = direction.normalize_or_zero();
+    // Update acceleration and velocity
+    let accel_world = accel_input.normalize_or_zero() * PLAYER_ACCELERATION;
+    player.velocity += accel_world * time.delta_secs();
 
-    player_transform.translation.x += direction.x * PLAYER_SPEED * time.delta_secs();
-    player_transform.translation.y += direction.y * PLAYER_SPEED * time.delta_secs();
+    // Per-axis damping: if there's no input on an axis, damp that axis
+    let factor = (1.0 - PLAYER_DAMPING * time.delta_secs()).max(0.0);
+    if accel_input.x == 0.0 {
+        player.velocity.x *= factor;
+        if player.velocity.x.abs() < 1.0 {
+            player.velocity.x = 0.0;
+        }
+    }
+    if accel_input.y == 0.0 {
+        player.velocity.y *= factor;
+        if player.velocity.y.abs() < 1.0 {
+            player.velocity.y = 0.0;
+        }
+    }
+
+    // Clamp max speed
+    let speed = player.velocity.length();
+    if speed > PLAYER_MAX_SPEED {
+        player.velocity = player.velocity / speed * PLAYER_MAX_SPEED;
+    }
+
+    // Integrate position
+    transform.translation.x += player.velocity.x * time.delta_secs();
+    transform.translation.y += player.velocity.y * time.delta_secs();
 }
 
 fn move_sightline(
