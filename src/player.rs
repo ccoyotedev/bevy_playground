@@ -107,33 +107,16 @@ fn move_player(
     }
 
     // Update acceleration and velocity
-    let accel_world = accel_input.normalize_or_zero() * PLAYER_ACCELERATION;
-    movable.velocity += accel_world * time.delta_secs();
+    movable.apply_acceleration(accel_input, PLAYER_ACCELERATION, time.delta_secs());
 
     // Per-axis damping: if there's no input on an axis, damp that axis
-    let factor = (1.0 - PLAYER_DAMPING * time.delta_secs()).max(0.0);
-    if accel_input.x == 0.0 {
-        movable.velocity.x *= factor;
-        if movable.velocity.x.abs() < 1.0 {
-            movable.velocity.x = 0.0;
-        }
-    }
-    if accel_input.y == 0.0 {
-        movable.velocity.y *= factor;
-        if movable.velocity.y.abs() < 1.0 {
-            movable.velocity.y = 0.0;
-        }
-    }
+    movable.apply_axis_damping(accel_input, PLAYER_DAMPING, time.delta_secs());
 
     // Clamp max speed
-    let speed = movable.velocity.length();
-    if speed > PLAYER_MAX_SPEED {
-        movable.velocity = movable.velocity / speed * PLAYER_MAX_SPEED;
-    }
+    movable.clamp_max_speed(PLAYER_MAX_SPEED);
 
     // Integrate position
-    transform.translation.x += movable.velocity.x * time.delta_secs();
-    transform.translation.y += movable.velocity.y * time.delta_secs();
+    movable.integrate_position(&mut transform, time.delta_secs());
 }
 
 fn move_sightline(
