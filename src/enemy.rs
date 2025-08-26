@@ -1,11 +1,8 @@
-use bevy::prelude::*;
+use bevy::{math::ops::atan2, prelude::*};
 use rand::prelude::*;
 
 use crate::movable::Movable;
-
-#[derive(Component)]
-#[require(Movable)]
-pub struct Enemy;
+use crate::player::Player;
 
 const ENEMY_DIAMETER: f32 = 40.0;
 // const ENEMY_MAX_SPEED: f32 = 400.0;
@@ -14,12 +11,26 @@ const ENEMY_DIAMETER: f32 = 40.0;
 // const ENEMY_DAMPING: f32 = 2.0;
 const ENEMY_COLOR: Color = Color::srgb(1.0, 0.5, 0.5);
 const ENEMIES_TO_SPAWN: i32 = 5;
+const ENEMY_ACCELERATION: f32 = 400.;
+const ENEMY_MAX_SPEED: f32 = 300.0;
+const ENEMY_DAMPING: f32 = 2.0;
+
+#[derive(Component)]
+#[require(Movable)]
+pub struct Enemy {}
+
+impl Enemy {
+    fn new() -> Enemy {
+        Enemy {}
+    }
+}
 
 pub struct EnemyPlugin;
 
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_enemies);
+        app.add_systems(FixedUpdate, enemy_movement);
     }
 }
 
@@ -49,9 +60,55 @@ fn spawn_enemies(
             MeshMaterial2d(materials.add(ENEMY_COLOR)),
             Transform::from_translation(starting_position)
                 .with_scale(Vec2::splat(ENEMY_DIAMETER).extend(1.0)),
-            Enemy,
+            Enemy::new(),
             Movable::new(),
             crate::Collider,
         ));
+    }
+}
+
+fn enemy_movement(
+    mut enemy_query: Query<(&mut Transform, &mut Movable), (With<Enemy>, Without<Player>)>,
+    mut player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
+    time: Res<Time>,
+) {
+    let Ok(player_transform) = player_query.single_mut() else {
+        return;
+    };
+
+    for (mut transform, mut movable) in enemy_query.iter_mut() {
+        let player_pos = player_transform.translation;
+        let enemy_pos = transform.translation;
+        let dy = player_pos.y - enemy_pos.y;
+        let dx = player_pos.x - enemy_pos.x;
+        let accel_dir = Vec2::new(dx, dy);
+
+        let accel_world = accel_dir.normalize_or_zero() * ENEMY_ACCELERATION;
+        movable.velocity += accel_world * time.delta_secs();
+
+        // Per-axis damping: if there's no input on an axis, damp that axis
+        let factor = (1.0 - ENEMY_DAMPING * time.delta_secs()).max(0.0);
+        if accel_dir.x == 0.0 {
+            movable.velocity.x *= factor;
+            if movable.velocity.x.abs() < 1.0 {
+                movable.velocity.x = 0.0;
+            }
+        }
+        if accel_dir.y == 0.0 {
+            movable.velocity.y *= factor;
+            if movable.velocity.y.abs() < 1.0 {
+                movable.velocity.y = 0.0;
+            }
+        }
+
+        // Clamp max speed
+        let speed = movable.velocity.length();
+        if speed > ENEMY_MAX_SPEED {
+            movable.velocity = movable.velocity / speed * ENEMY_MAX_SPEED;
+        }
+
+        // Integrate position
+        transform.translation.x += movable.velocity.x * time.delta_secs();
+        transform.translation.y += movable.velocity.y * time.delta_secs();
     }
 }
